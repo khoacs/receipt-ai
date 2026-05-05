@@ -1,0 +1,26 @@
+# secrets
+.env
+
+# python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# os
+.DS_Store
+Thumbs.db
+
+# data — keep directory structure, ignore actual files
+data/input/*
+data/output/*
+!data/input/.gitkeep
+!data/output/.gitkeep
+
+# streamlit user credentials (global, not project-level)
+.streamlit/credentials.toml
