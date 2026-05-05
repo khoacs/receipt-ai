@@ -32,10 +32,11 @@ It's a good reminder that the gap between "I know these tools exist" and "I can 
 | Layer | Choice |
 |---|---|
 | UI | Streamlit |
-| Vision model | Qwen2.5-VL-72B-Instruct via [OpenRouter](https://openrouter.ai) |
 | Language | Python 3.10+ |
+| Cloud backend | Qwen2.5-VL-72B-Instruct via [OpenRouter](https://openrouter.ai) — best accuracy, ~8s/receipt |
+| Local backend | Qwen2.5-VL-7B or Gemma3-12B via [Ollama](https://ollama.com) — private, no API key needed |
 
-The model runs on OpenRouter's infrastructure — no local GPU required. Inference takes ~6–12 seconds per receipt.
+The app supports switching between backends at runtime. See [Model selection learnings](#model-selection-learnings) for a comparison of accuracy and tradeoffs across all tested models, including Claude.
 
 ---
 
