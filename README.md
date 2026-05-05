@@ -23,8 +23,6 @@ It's a good reminder that the gap between "I know these tools exist" and "I can 
 
 **Extracted fields:** vendor, date, currency, subtotal (excl. tax), tax, total (incl. tax), gift card amount, points redeemed, line items
 
-![UI screenshot](docs/screenshot.png)
-
 ---
 
 ## Tech stack
@@ -44,7 +42,7 @@ The app supports switching between backends at runtime. See [Model selection lea
 
 **1. Clone and create a virtual environment**
 ```bash
-git clone https://github.com/your-username/receipt-ai.git
+git clone https://github.com/khoacs/receipt-ai.git
 cd receipt-ai
 python -m venv venv
 source venv/bin/activate      # Windows: venv\Scripts\activate
@@ -55,20 +53,29 @@ source venv/bin/activate      # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-**3. Set your API key**
+**3. Configure your backend**
 
+*Option A — OpenRouter (cloud, best accuracy):*
 Create a free account at [openrouter.ai](https://openrouter.ai), generate an API key, then:
 ```bash
 cp .env.example .env
-# edit .env and paste your key
+# edit .env and paste your OPENROUTER_API_KEY
 ```
+
+*Option B — Ollama (local, private, no API key needed):*
+Install [Ollama](https://ollama.com), then pull a vision model:
+```bash
+ollama pull qwen2.5vl:7b   # recommended local model
+ollama serve
+```
+No `.env` file needed for local inference.
 
 **4. Run**
 ```bash
 streamlit run app.py
 ```
 
-Opens at `http://localhost:8501`.
+Opens at `http://localhost:8501`. Select your backend from the radio buttons at the top.
 
 ---
 
@@ -76,7 +83,9 @@ Opens at `http://localhost:8501`.
 
 You can also run extraction directly without the UI:
 ```bash
-python main.py data/input/your-receipt.jpg
+python main.py data/input/your-receipt.jpg                   # OpenRouter (default)
+python main.py data/input/your-receipt.jpg --backend ollama-qwen   # local Qwen 7B
+python main.py data/input/your-receipt.jpg --backend ollama-gemma  # local Gemma 12B
 ```
 
 Prints extracted JSON to stdout.
@@ -97,13 +106,14 @@ OCR accuracy on Japanese thermal paper receipts is good but not perfect:
 
 ## Model selection learnings
 
-Tested three models against real Japanese receipts during development. The key takeaway: **architecture and training purpose matter more than parameter count.**
+Tested four models against real Japanese receipts during development. The key takeaway: **architecture and training purpose matter more than parameter count.**
 
-### The three models tested
+### Models tested
 
 | Model | Params | Type | Accuracy | Speed |
 |---|---|---|---|---|
-| Qwen2.5-VL 72B (OpenRouter) | 72B | Vision-native | Best | ~8s |
+| Claude (Anthropic) | — | Vision-native, proprietary | Best | — |
+| Qwen2.5-VL 72B (OpenRouter) | 72B | Vision-native | Very good | ~8s |
 | Qwen2.5-VL 7B (Ollama) | 7B | Vision-native | Mediocre | ~6s |
 | Gemma3 12B (Ollama) | 12B | Text-first + vision | Poor | — |
 
@@ -157,18 +167,21 @@ Use a **local vision model** when privacy is the primary constraint and human re
 
 ## Privacy
 
-> ⚠️ Receipt images are sent as base64 to OpenRouter's API and processed by Qwen model servers outside Japan. Receipt data leaves your device.
+The app offers two modes with different privacy profiles:
 
-This is acceptable for a personal prototype but may not be suitable for handling sensitive or confidential business receipts.
+- **Cloud (OpenRouter)** — receipt images are sent as base64 to OpenRouter's API and processed by Qwen model servers outside Japan. Receipt data leaves your device. Acceptable for personal use but may not be suitable for sensitive business receipts.
+- **Local (Ollama)** — all processing happens on your machine. Images never leave your device.
 
-**Phase 2 will add a local [Ollama](https://ollama.com) backend** to keep all processing on-device.
+Switch between modes using the backend selector in the UI.
 
 ---
 
 ## Roadmap
 
 - [x] Phase 1 — Core extraction (`main.py`) + Streamlit UI + CSV export
-- [ ] Phase 2 — Local Ollama backend for on-device privacy
+- [x] Phase 2 — Local Ollama backend (Qwen2.5-VL 7B, Gemma3 12B) for on-device privacy
+- [x] Phase 2b — Multi-backend selector in UI with runtime switching
+- [x] Phase 2c — Model benchmarking across cloud and local backends (see [Model selection learnings](#model-selection-learnings))
 - [ ] Phase 3 — Direct integration with accounting system (TBD)
 
 ---
@@ -182,7 +195,7 @@ receipt-ai/
 ├── requirements.txt
 ├── .env.example
 ├── .streamlit/
-│   └── config.toml     # Disables usage stats prompt
+│   └── config.toml     # Dark theme + disables usage stats prompt
 └── data/
     ├── input/          # Drop receipt images here (git-ignored)
     └── output/         # Exported CSVs land here (git-ignored)
