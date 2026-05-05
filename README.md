@@ -121,6 +121,16 @@ receipt-ai/
 
 ---
 
+## Motivation
+
+This started as a practical favour — a friend was manually transcribing Japanese receipts into a spreadsheet at work, which felt like exactly the kind of task a vision model should be able to handle.
+
+The interesting part wasn't any single piece of it. Vision LLMs, structured JSON output, and Streamlit have all matured to the point where each one is straightforward on its own. What was genuinely surprising was how quickly they composed together into something useful. A working prototype — with Japanese OCR, editable review UI, and CSV export — came together in a single two-hour session.
+
+It's a good reminder that the gap between "I know these tools exist" and "I can combine them to solve a real problem" is much smaller now than it used to be.
+
+---
+
 ## License
 
 MIT
