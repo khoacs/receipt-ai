@@ -1,11 +1,14 @@
 import csv
 import io
+import os
 import tempfile
 from pathlib import Path
 
 import streamlit as st
 
-from main import ExtractionError, extract_receipt_data
+from main import BACKENDS, ExtractionError, extract_receipt_data
+
+DEPLOYMENT_MODE = os.getenv("DEPLOYMENT_MODE", "local")
 
 st.set_page_config(page_title="Receipt OCR", page_icon="🧾", layout="wide")
 
@@ -131,6 +134,32 @@ st.markdown("""
     margin: 36px 0 28px 0;
 }
 
+/* ── Backend notice badges ───────────────────────────────── */
+.notice-local {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: rgba(79,138,139,0.12);
+    border: 1px solid rgba(79,138,139,0.35);
+    border-radius: 6px;
+    padding: 7px 12px;
+    font-size: 0.82rem;
+    color: var(--accent);
+    margin: 4px 0 16px 0;
+}
+.notice-cloud {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: rgba(148,163,184,0.08);
+    border: 1px solid rgba(148,163,184,0.20);
+    border-radius: 6px;
+    padding: 7px 12px;
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    margin: 4px 0 16px 0;
+}
+
 /* ── Download button ─────────────────────────────────────── */
 [data-testid="stDownloadButton"] > button {
     background: var(--accent-dim) !important;
@@ -162,11 +191,49 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------------------------
+# Backend selector
+# ---------------------------------------------------------------------------
+
+BACKEND_LABELS = {
+    "openrouter":   "☁️  OpenRouter  (cloud)",
+    "ollama-qwen":  "🖥️  Ollama · Qwen2.5-VL 7B  (local)",
+    "ollama-gemma": "🖥️  Ollama · Gemma3 12B  (local)",
+}
+
+if DEPLOYMENT_MODE == "cloud":
+    backend_choice = "openrouter"
+    st.markdown(
+        '<div class="notice-cloud">⚠️ Images are sent to OpenRouter / Qwen servers for processing</div>',
+        unsafe_allow_html=True,
+    )
+else:
+    backend_choice = st.radio(
+        "Backend",
+        options=list(BACKEND_LABELS.keys()),
+        format_func=lambda k: BACKEND_LABELS[k],
+        horizontal=True,
+        label_visibility="collapsed",
+    )
+
+    if backend_choice.startswith("ollama"):
+        st.markdown(
+            '<div class="notice-local">🔒 Running locally — your images never leave this device</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            '<div class="notice-cloud">⚠️ Images are sent to OpenRouter / Qwen servers for processing</div>',
+            unsafe_allow_html=True,
+        )
+
+# ---------------------------------------------------------------------------
 # Session state
 # ---------------------------------------------------------------------------
 
 if "receipts" not in st.session_state:
     st.session_state.receipts = {}
+if "uploader_key" not in st.session_state:
+    st.session_state.uploader_key = 0
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -183,9 +250,11 @@ def text_field(label: str, vendor: bool = False, **kwargs) -> str:
     return st.text_input("", label_visibility="collapsed", **kwargs)
 
 
-def number_field(label: str, **kwargs) -> float:
+def number_field(label: str, value: float | None = None, **kwargs) -> float | None:
     field_label(label)
-    return st.number_input("", label_visibility="collapsed", **kwargs)
+    # Cast to float so step=1.0 never causes StreamlitMixedNumericTypesError
+    v = float(value) if value is not None else None
+    return st.number_input("", label_visibility="collapsed", value=v, **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -196,6 +265,7 @@ uploaded_files = st.file_uploader(
     "Drop receipt images here — PNG, JPG, WEBP",
     type=["png", "jpg", "jpeg", "webp"],
     accept_multiple_files=True,
+    key=f"uploader_{st.session_state.uploader_key}",
 )
 
 if uploaded_files:
@@ -208,11 +278,18 @@ if uploaded_files:
                     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
                         tmp.write(uploaded_file.read())
                         tmp_path = tmp.name
-                    data = extract_receipt_data(tmp_path)
+                    data = extract_receipt_data(tmp_path, backend=backend_choice)
                     Path(tmp_path).unlink(missing_ok=True)
                     st.session_state.receipts[name] = data
                 except ExtractionError as e:
-                    st.error(f"**{name}**: {e}")
+                    msg = str(e)
+                    if "ollama" in msg.lower():
+                        st.error(
+                            "**Ollama is not running.** Start it in a terminal with:\n"
+                            "```\nollama serve\n```"
+                        )
+                    else:
+                        st.error(f"**{name}**: {e}")
                     continue
                 except Exception as e:
                     st.error(f"**{name}**: unexpected error — {e}")
@@ -257,19 +334,19 @@ for i, (name, data) in enumerate(st.session_state.receipts.items()):
 
         with col2:
             data["subtotal"]  = number_field("Subtotal (excl. tax)",
-                                             value=float(data.get("subtotal") or 0),
+                                             data.get("subtotal"),
                                              step=1.0, key=f"{name}_subtotal")
             data["tax"]       = number_field("Tax",
-                                             value=float(data.get("tax") or 0),
+                                             data.get("tax"),
                                              step=1.0, key=f"{name}_tax")
             data["total"]     = number_field("Total (incl. tax)",
-                                             value=float(data.get("total") or 0),
+                                             data.get("total"),
                                              step=1.0, key=f"{name}_total")
             data["gift_card"] = number_field("Gift card",
-                                             value=float(data.get("gift_card") or 0),
+                                             data.get("gift_card"),
                                              step=1.0, key=f"{name}_gift_card")
             data["points"]    = number_field("Points redeemed",
-                                             value=float(data.get("points") or 0),
+                                             data.get("points"),
                                              step=1.0, key=f"{name}_points")
 
         st.markdown('<p class="field-label" style="margin-top:16px">Line items</p>',
@@ -335,4 +412,5 @@ if st.session_state.receipts:
     with clear_col:
         if st.button("Clear all", type="secondary", use_container_width=True):
             st.session_state.receipts = {}
+            st.session_state.uploader_key += 1
             st.rerun()

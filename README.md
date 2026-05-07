@@ -38,7 +38,7 @@ The app supports switching between backends at runtime. See [Model selection lea
 
 ---
 
-## Setup
+## Run locally
 
 **1. Clone and create a virtual environment**
 ```bash
@@ -76,6 +76,24 @@ streamlit run app.py
 ```
 
 Opens at `http://localhost:8501`. Select your backend from the radio buttons at the top.
+
+---
+
+## Deploy to Streamlit Community Cloud
+
+For a public, always-on deployment without installing anything locally:
+
+1. Push the repo to GitHub (if not already done)
+2. Go to [share.streamlit.io](https://share.streamlit.io) and sign in with GitHub
+3. Click **New app** and connect the repo, set **Main file path** to `app.py`
+4. Open **Advanced settings → Secrets** and paste:
+   ```toml
+   OPENROUTER_API_KEY = "your_key_here"
+   DEPLOYMENT_MODE = "cloud"
+   ```
+5. Click **Deploy**
+
+In cloud mode the Ollama backend is hidden — local inference isn't available on remote servers. The app runs on OpenRouter only. Images are processed on OpenRouter / Qwen servers.
 
 ---
 
@@ -182,6 +200,7 @@ Switch between modes using the backend selector in the UI.
 - [x] Phase 2 — Local Ollama backend (Qwen2.5-VL 7B, Gemma3 12B) for on-device privacy
 - [x] Phase 2b — Multi-backend selector in UI with runtime switching
 - [x] Phase 2c — Model benchmarking across cloud and local backends (see [Model selection learnings](#model-selection-learnings))
+- [x] Phase 2d — Streamlit Community Cloud deployment support (`DEPLOYMENT_MODE`)
 - [ ] Phase 3 — Direct integration with accounting system (TBD)
 
 ---
@@ -195,7 +214,8 @@ receipt-ai/
 ├── requirements.txt
 ├── .env.example
 ├── .streamlit/
-│   └── config.toml     # Dark theme + disables usage stats prompt
+│   ├── config.toml              # Dark theme + disables usage stats prompt
+│   └── secrets.toml.example    # Secrets template for Streamlit Cloud deployment
 └── data/
     ├── input/          # Drop receipt images here (git-ignored)
     └── output/         # Exported CSVs land here (git-ignored)

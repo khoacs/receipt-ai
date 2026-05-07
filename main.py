@@ -13,23 +13,45 @@ import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
-from openai import OpenAI
+from openai import APIConnectionError, OpenAI
 
 load_dotenv()
 
 # ---------------------------------------------------------------------------
-# OpenRouter client
+# Backend configuration
 # ---------------------------------------------------------------------------
 
-_api_key = os.getenv("OPENROUTER_API_KEY")
-if not _api_key:
-    raise EnvironmentError("OPENROUTER_API_KEY is not set in the environment / .env file.")
+BACKENDS: dict[str, dict] = {
+    "openrouter": {
+        "base_url":    "https://openrouter.ai/api/v1",
+        "model":       "qwen/qwen2.5-vl-72b-instruct",
+        "api_key_env": "OPENROUTER_API_KEY",
+    },
+    "ollama-qwen": {
+        "base_url": "http://localhost:11434/v1",
+        "model":    "qwen2.5vl:7b",
+        "api_key":  "ollama",
+    },
+    "ollama-gemma": {
+        "base_url": "http://localhost:11434/v1",
+        "model":    "gemma3:12b",
+        "api_key":  "ollama",
+    },
+}
 
-_client = OpenAI(
-    api_key=_api_key,
-    base_url="https://openrouter.ai/api/v1",
-)
-MODEL = "qwen/qwen2.5-vl-72b-instruct"
+
+def _make_client(backend: str) -> tuple[OpenAI, str]:
+    """Return (OpenAI-compatible client, model name) for the given backend."""
+    cfg = BACKENDS[backend]
+    if "api_key_env" in cfg:
+        api_key = os.getenv(cfg["api_key_env"])
+        if not api_key:
+            raise EnvironmentError(
+                f"{cfg['api_key_env']} is not set in the environment / .env file."
+            )
+    else:
+        api_key = cfg["api_key"]
+    return OpenAI(api_key=api_key, base_url=cfg["base_url"]), cfg["model"]
 
 # ---------------------------------------------------------------------------
 # Prompt
@@ -99,7 +121,8 @@ def _image_to_base64(image_path: str) -> tuple[str, str]:
 # Validation
 # ---------------------------------------------------------------------------
 
-_REQUIRED_FIELDS = ("vendor", "date", "subtotal", "tax", "total", "gift_card", "points", "currency", "line_items")
+_REQUIRED_FIELDS = ("vendor", "date", "subtotal", "tax", "total", "currency", "line_items")
+_OPTIONAL_FIELDS = ("gift_card", "points")   # default to null if model omits them
 _NUMERIC_FIELDS  = ("subtotal", "tax", "total", "gift_card", "points")
 
 
@@ -116,9 +139,22 @@ def _validate(data: dict) -> dict:
     if missing:
         raise ExtractionError(f"Response is missing required fields: {missing}")
 
+    for f in _OPTIONAL_FIELDS:
+        data.setdefault(f, None)
+
     for field in _NUMERIC_FIELDS:
         value = data[field]
-        if value is not None and not isinstance(value, (int, float)):
+        if value is None:
+            continue
+        if isinstance(value, str):
+            # Smaller models sometimes return numbers quoted as strings
+            try:
+                data[field] = float(value.replace(",", ""))
+            except ValueError:
+                raise ExtractionError(
+                    f"Field '{field}' could not be parsed as a number: {value!r}"
+                )
+        elif not isinstance(value, (int, float)):
             raise ExtractionError(
                 f"Field '{field}' must be a number or null, got {type(value).__name__}: {value!r}"
             )
@@ -140,10 +176,19 @@ def _validate(data: dict) -> dict:
             raise ExtractionError(f"line_items[{i}] is not an object.")
         if "description" not in item or "amount" not in item:
             raise ExtractionError(f"line_items[{i}] missing 'description' or 'amount'.")
-        if item["amount"] is not None and not isinstance(item["amount"], (int, float)):
-            raise ExtractionError(
-                f"line_items[{i}].amount must be a number or null, got {item['amount']!r}"
-            )
+        amt = item["amount"]
+        if amt is not None:
+            if isinstance(amt, str):
+                try:
+                    item["amount"] = float(amt.replace(",", ""))
+                except ValueError:
+                    raise ExtractionError(
+                        f"line_items[{i}].amount could not be parsed as a number: {amt!r}"
+                    )
+            elif not isinstance(amt, (int, float)):
+                raise ExtractionError(
+                    f"line_items[{i}].amount must be a number or null, got {amt!r}"
+                )
 
     return data
 
@@ -152,12 +197,13 @@ def _validate(data: dict) -> dict:
 # Main extraction function
 # ---------------------------------------------------------------------------
 
-def extract_receipt_data(image_path: str) -> dict:
+def extract_receipt_data(image_path: str, backend: str = "openrouter") -> dict:
     """
-    Send a receipt image to OpenRouter and return structured data.
+    Send a receipt image to the selected backend and return structured data.
 
     Args:
         image_path: Local path to the receipt image.
+        backend:    "openrouter" (cloud) or "ollama" (local).
 
     Returns:
         Validated dict matching the extraction schema.
@@ -171,12 +217,14 @@ def extract_receipt_data(image_path: str) -> dict:
     if not path.exists():
         raise FileNotFoundError(f"Image not found: {image_path}")
 
+    client, model = _make_client(backend)
     b64_data, mime_type = _image_to_base64(image_path)
 
-    response = _client.chat.completions.create(
-        model=MODEL,
-        temperature=0,
-        messages=[
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            temperature=0,
+            messages=[
             {
                 "role": "user",
                 "content": [
@@ -192,6 +240,11 @@ def extract_receipt_data(image_path: str) -> dict:
             }
         ],
     )
+    except APIConnectionError:
+        raise ExtractionError(
+            "Could not reach the Ollama server. "
+            "Make sure it is running: ollama serve"
+        )
 
     raw_text = response.choices[0].message.content.strip()
 
@@ -212,11 +265,16 @@ def extract_receipt_data(image_path: str) -> dict:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    test_image = sys.argv[1] if len(sys.argv) > 1 else "receipt.jpg"
+    import argparse
+    parser = argparse.ArgumentParser(description="Extract receipt data via vision LLM.")
+    parser.add_argument("image", nargs="?", default="receipt.jpg")
+    parser.add_argument("--backend", choices=list(BACKENDS), default="openrouter")
+    args = parser.parse_args()
 
-    print(f"Extracting data from: {test_image}\n")
+    print(f"Backend : {args.backend}")
+    print(f"Image   : {args.image}\n")
     try:
-        result = extract_receipt_data(test_image)
+        result = extract_receipt_data(args.image, backend=args.backend)
         print(json.dumps(result, ensure_ascii=False, indent=2))
     except FileNotFoundError as e:
         print(f"[Error] {e}")
