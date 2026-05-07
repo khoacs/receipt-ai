@@ -225,6 +225,12 @@ receipt-ai/
 
 ---
 
+## About
+
+Built by [Khoa](https://github.com/khoacs). Code was generated with [Claude Code](https://claude.ai/code), directed by the author for architecture, design decisions, model selection, and testing.
+
+---
+
 ## License
 
 MIT
