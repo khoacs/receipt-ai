@@ -4,6 +4,8 @@ A Streamlit app that extracts structured data from receipt images using a vision
 
 Built as a learning side project to help a friend extract receipt data at work and input it into an accounting system.
 
+**[Try the live demo →](https://receipt-ai.streamlit.app)**
+
 ## Motivation
 
 This started as a practical favour — a friend was manually transcribing Japanese receipts into a spreadsheet at work, which felt like exactly the kind of task a vision model should be able to handle.
